@@ -1,0 +1,850 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>결제 타이밍 분석 - 원/달러</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Malgun Gothic', sans-serif; background: #f0f4f8; color: #1a202c; }
+
+  .header {
+    background: linear-gradient(135deg, #1a365d, #2b6cb0);
+    color: white;
+    padding: 24px 32px;
+  }
+  .header h1 { font-size: 22px; margin-bottom: 6px; }
+  .header p { font-size: 13px; opacity: 0.8; }
+
+  .container { max-width: 960px; margin: 0 auto; padding: 24px; }
+
+  .status-bar {
+    background: #f0fff4;
+    border: 1px solid #c6f6d5;
+    border-radius: 8px;
+    padding: 10px 18px;
+    margin-bottom: 16px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 13px;
+  }
+  .refresh-btn {
+    background: #38a169; color: white; border: none;
+    padding: 5px 14px; border-radius: 6px; cursor: pointer; font-size: 12px;
+  }
+
+  .top-cards {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+    margin-bottom: 24px;
+  }
+  .card {
+    background: white;
+    border-radius: 12px;
+    padding: 20px 24px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  }
+  .card .label { font-size: 12px; color: #718096; margin-bottom: 8px; }
+  .card .value { font-size: 32px; font-weight: 800; }
+  .card .sub { font-size: 12px; color: #718096; margin-top: 6px; }
+
+  .signal-card {
+    background: white;
+    border-radius: 12px;
+    padding: 20px 24px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    margin-bottom: 24px;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+  }
+  .signal-icon { font-size: 40px; }
+  .signal-text h2 { font-size: 20px; font-weight: 800; margin-bottom: 4px; }
+  .signal-text p { font-size: 13px; color: #4a5568; }
+
+  .chart-card {
+    background: white;
+    border-radius: 12px;
+    padding: 20px 24px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    margin-bottom: 24px;
+  }
+  .chart-card h3 { font-size: 14px; color: #2d3748; margin-bottom: 16px; }
+  .chart-wrap { position: relative; height: 320px; }
+
+  .calc-card {
+    background: white;
+    border-radius: 12px;
+    padding: 20px 24px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    margin-bottom: 24px;
+  }
+  .calc-card h3 { font-size: 14px; color: #2d3748; margin-bottom: 16px; }
+  .input-row { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; }
+  .input-group { display: flex; flex-direction: column; gap: 4px; }
+  .input-group label { font-size: 12px; color: #718096; }
+  .input-group input {
+    border: 1px solid #e2e8f0; border-radius: 6px;
+    padding: 9px 12px; font-size: 15px; width: 180px;
+  }
+  .calc-btn {
+    background: #3182ce; color: white; border: none;
+    padding: 10px 24px; border-radius: 6px; cursor: pointer;
+    font-size: 14px; font-weight: 600;
+  }
+  .calc-result {
+    margin-top: 16px;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+  }
+  .result-box {
+    padding: 16px;
+    border-radius: 8px;
+    text-align: center;
+  }
+  .result-box .r-label { font-size: 12px; color: #718096; margin-bottom: 6px; }
+  .result-box .r-value { font-size: 20px; font-weight: 700; }
+  .result-box .r-sub { font-size: 11px; margin-top: 4px; color: #718096; }
+  .box-current { background: #ebf8ff; border: 1px solid #bee3f8; }
+  .box-good { background: #f0fff4; border: 1px solid #c6f6d5; }
+  .box-diff { background: #fffff0; border: 1px solid #fefcbf; }
+
+  .table-card {
+    background: white;
+    border-radius: 12px;
+    padding: 20px 24px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    overflow-x: auto;
+  }
+  .table-card h3 { font-size: 14px; color: #2d3748; margin-bottom: 14px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { background: #edf2f7; padding: 10px 14px; text-align: right; font-weight: 600; color: #4a5568; }
+  th:first-child { text-align: left; }
+  td { padding: 9px 14px; text-align: right; border-bottom: 1px solid #f7fafc; }
+  td:first-child { text-align: left; font-weight: 600; }
+  tr:last-child td { border-bottom: none; }
+  tr.predicted td { color: #805ad5; }
+  tr.best-row td { background: #f0fff4; }
+  .tag { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; }
+  .tag-good { background: #c6f6d5; color: #276749; }
+  .tag-bad { background: #fed7d7; color: #c53030; }
+  .tag-mid { background: #fefcbf; color: #744210; }
+  .tag-pred { background: #e9d8fd; color: #553c9a; }
+  .note { font-size: 12px; color: #718096; margin-top: 10px; }
+
+  /* 통화 시뮬레이터 */
+  .sim-card {
+    background: white;
+    border-radius: 12px;
+    padding: 20px 24px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    margin-bottom: 24px;
+  }
+  .sim-card h3 { font-size: 14px; color: #2d3748; margin-bottom: 16px; }
+  .sim-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    margin-bottom: 16px;
+  }
+  .sim-col {
+    border-radius: 10px;
+    padding: 16px 18px;
+  }
+  .sim-col.usd-col { background: #ebf8ff; border: 1px solid #bee3f8; }
+  .sim-col.cny-col { background: #fff5f5; border: 1px solid #fed7d7; }
+  .sim-col-title { font-size: 14px; font-weight: 700; margin-bottom: 12px; }
+  .sim-col.usd-col .sim-col-title { color: #2b6cb0; }
+  .sim-col.cny-col .sim-col-title { color: #c53030; }
+  .sim-row { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
+  .sim-row label { font-size: 12px; color: #718096; }
+  .sim-row input {
+    border: 1px solid #e2e8f0; border-radius: 6px;
+    padding: 8px 12px; font-size: 15px; width: 100%;
+    background: white;
+  }
+  .sim-total {
+    margin-top: 10px;
+    padding: 10px 12px;
+    background: white;
+    border-radius: 8px;
+    font-size: 13px;
+  }
+  .sim-total .t-label { color: #718096; font-size: 12px; margin-bottom: 3px; }
+  .sim-total .t-value { font-size: 20px; font-weight: 800; }
+  .sim-verdict {
+    padding: 16px 20px;
+    border-radius: 10px;
+    font-size: 14px;
+    line-height: 1.8;
+    margin-top: 4px;
+  }
+
+@media print {
+  * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+  @page { margin: 6mm; size: A4 portrait; }
+  .status-bar, .calc-card, .sim-card, .table-card, .refresh-btn { display: none !important; }
+  body { background: white !important; }
+  .container { max-width: 100% !important; padding: 8px !important; }
+  .header { padding: 14px 20px !important; }
+  .chart-wrap { height: 280px !important; }
+}
+</style>
+</head>
+<body>
+
+<div class="header" style="display:flex; justify-content:space-between; align-items:flex-start;">
+  <div>
+    <h1>💵 설비 결제 타이밍 분석</h1>
+    <p>핵심 지표: 원/달러 환율 — 낮을 때 결제할수록 유리</p>
+  </div>
+  <div id="reportDate" style="font-size:13px; opacity:0.75; text-align:right; padding-top:4px;"></div>
+</div>
+<script>
+  (function(){
+    const d = new Date();
+    document.getElementById('reportDate').textContent =
+      `${d.getFullYear()}년 ${d.getMonth()+1}월 ${d.getDate()}일 기준`;
+  })();
+</script>
+
+<div class="container">
+
+  <div class="status-bar">
+    <span id="liveStatus" style="font-weight:600; color:#718096;">환율 불러오는 중...</span>
+    <span style="display:flex; gap:10px; align-items:center;">
+      <span id="liveTime" style="color:#718096;"></span>
+      <input type="date" id="dateInput"
+        style="border:1px solid #e2e8f0; border-radius:6px; padding:4px 10px; font-size:12px; color:#4a5568;">
+      <button class="refresh-btn" onclick="fetchByDate()">조회</button>
+      <button class="refresh-btn" onclick="fetchToday()" style="background:#718096;">오늘</button>
+    </span>
+  </div>
+
+  <!-- 핵심 카드 3개 -->
+  <div class="top-cards">
+    <div class="card">
+      <div class="label">현재 원/달러</div>
+      <div class="value" id="cardCurrent" style="color:#3182ce;">-</div>
+      <div class="sub" id="cardCurrentSub"></div>
+    </div>
+    <div class="card">
+      <div class="label">올해 최저 (1월)</div>
+      <div class="value" style="color:#38a169;">1,451.56</div>
+      <div class="sub">2026년 2월 — 최적 결제 시점</div>
+    </div>
+    <div class="card">
+      <div class="label">올해 최고</div>
+      <div class="value" style="color:#e53e3e;">1,558.80</div>
+      <div class="sub">6월 5일 — 최악 결제 시점</div>
+    </div>
+  </div>
+
+  <!-- 결제 신호 -->
+  <div class="signal-card" id="signalCard">
+    <div class="signal-icon" id="signalIcon">⏳</div>
+    <div class="signal-text">
+      <h2 id="signalTitle">환율 조회 중...</h2>
+      <p id="signalDesc"></p>
+    </div>
+  </div>
+
+  <!-- 차트 -->
+  <div class="chart-card">
+    <h3>📈 원/달러 환율 추이 및 예측 (선형 회귀)</h3>
+    <div class="chart-wrap">
+      <canvas id="mainChart"></canvas>
+    </div>
+  </div>
+
+  <!-- 전문가 분석 -->
+  <div class="chart-card" style="margin-bottom:24px; page-break-inside: avoid;">
+    <h3>📋 전문가 전망 분석 및 예측 근거</h3>
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:10px;">
+
+      <div style="padding:8px 12px; background:#f0fff4; border:1px solid #c6f6d5; border-radius:8px;">
+        <div style="font-weight:700; color:#276749; margin-bottom:8px;">📉 하락 요인 (낙관 40% 반영)</div>
+        <ul style="font-size:12px; color:#2d3748; line-height:1.6; padding-left:16px;">
+          <li>미국 기준금리 인하 기대 재부각 시 달러 약세 전환</li>
+          <li>중동 긴장 완화 → 안전자산 달러 선호 감소</li>
+          <li>WGBI 편입 효과 · 수출 회복으로 원화 수요 증가</li>
+          <li>글로벌 투자은행 평균 목표: <strong>1,426원</strong> (6~9개월)</li>
+        </ul>
+      </div>
+
+      <div style="padding:8px 12px; background:#fff5f5; border:1px solid #fed7d7; border-radius:8px;">
+        <div style="font-weight:700; color:#c53030; margin-bottom:8px;">📈 상승 요인 (비관 25% 반영)</div>
+        <ul style="font-size:12px; color:#2d3748; line-height:1.6; padding-left:16px;">
+          <li>미국 고용 강세 → 금리 인하 지연 · 달러 강세 지속</li>
+          <li>중동 리스크 확대 시 유가 급등 · 달러 수요 증가</li>
+          <li>외국인 자금 유출 · 국민연금 해외투자 달러 수요</li>
+          <li>최악 시나리오 예측 범위: <strong>1,580~1,600원</strong></li>
+        </ul>
+      </div>
+
+      <div style="padding:8px 12px; background:#fffff0; border:1px solid #fefcbf; border-radius:8px; grid-column: 1 / -1;">
+        <div style="font-weight:700; color:#744210; margin-bottom:8px;">⚖️ 종합 판단 및 수입 구매 전략 (중립 35% 반영)</div>
+        <p style="font-size:12px; color:#2d3748; line-height:1.7;">
+          현재 1,530원대는 역사적으로 저렴한 구간이 아님. 7월 가장 유력한 시나리오(50~60%)는
+          <strong>1,480~1,520원대 회귀</strong>로, 급락보다는 완만한 하락 예상.
+          <br><br>
+          <strong>환율 구간별 대응 기준</strong> —
+          1,450원 이하: 적극 결제 ·
+          1,480원 이하: 결제 고려 ·
+          1,500원 이상: 관망 ·
+          1,550원 이상: 비상 구간
+          <br><br>
+          <strong>권장 분할 결제 전략</strong> — 100% 일괄 결제보다는,
+          현시점 30% · 1,500원 근처 30% · 1,480원 이하 나머지 40% 순 분할 결제로 환리스크 분산.
+          급한 결제가 아니라면 <strong>6월 중순~말까지 추이 모니터링 권장.</strong>
+        </p>
+      </div>
+
+    </div>
+    <div style="font-size:11px; color:#a0aec0; border-top:1px solid #e2e8f0; padding-top:10px; line-height:1.6; page-break-inside: avoid;">
+      <strong>출처</strong><br>
+      · 대외경제정책연구원(KIEP) — 2026년 세계경제 전망<br>
+      · KB경영연구소 — 2026 원·달러 환율 전망 (kbthink.com)<br>
+      · KEB하나은행 — 2026년 외환시장 전망 보고서<br>
+      · The Korea Herald — "Global banks see 1,400 won as new baseline" (2026)<br>
+      · Traders Union / Long Forecast — USD/KRW 알고리즘 예측 (2026 H2)
+    </div>
+  </div>
+
+  <!-- 계산기 -->
+  <div class="calc-card">
+    <h3>🧮 결제 금액 시뮬레이터</h3>
+    <div class="input-row">
+      <div class="input-group">
+        <label>설비 금액 (달러, USD)</label>
+        <input type="text" id="usdAmount" value="500,000" oninput="fmtInput(this)" onchange="calculate()">
+      </div>
+      <div class="input-group">
+        <label>현재 원/달러</label>
+        <input type="text" id="usdRateInput" value="1,531.35" oninput="fmtInput(this)" onchange="calculate()">
+      </div>
+      <div class="input-group">
+        <label>목표 원/달러 (희망)</label>
+        <input type="text" id="targetRate" value="1,480" oninput="fmtInput(this)" onchange="calculate()">
+      </div>
+      <button class="calc-btn" onclick="calculate()">계산</button>
+    </div>
+    <div class="calc-result" id="calcResult"></div>
+  </div>
+
+  <!-- 통화 시뮬레이터 -->
+  <div class="sim-card">
+    <h3>💱 달러 vs 위안 제시금액 비교 시뮬레이터</h3>
+    <div class="sim-grid">
+      <div class="sim-col usd-col">
+        <div class="sim-col-title">💵 달러 결제</div>
+        <div class="sim-row">
+          <label>업체 제시금액 (USD)</label>
+          <input type="text" id="simUsdAmount" value="500,000" oninput="fmtInput(this);simCalc()">
+        </div>
+        <div class="sim-row">
+          <label>원/달러 환율 (자동입력 · 수정 가능)</label>
+          <input type="text" id="simUsdRate" value="1,531.35" oninput="fmtInput(this);simCalc()">
+        </div>
+        <div class="sim-total">
+          <div class="t-label">원화 환산 비용</div>
+          <div class="t-value" id="simUsdTotal" style="color:#2b6cb0;">-</div>
+        </div>
+      </div>
+      <div class="sim-col cny-col">
+        <div class="sim-col-title">🀄 위안 결제</div>
+        <div class="sim-row">
+          <label>업체 제시금액 (CNY)</label>
+          <input type="text" id="simCnyAmount" value="3,400,000" oninput="fmtInput(this);simCalc()">
+        </div>
+        <div class="sim-row">
+          <label>원/위안 환율 (자동입력 · 수정 가능)</label>
+          <input type="text" id="simCnyRate" value="226.34" oninput="fmtInput(this);simCalc()">
+        </div>
+        <div class="sim-total">
+          <div class="t-label">원화 환산 비용</div>
+          <div class="t-value" id="simCnyTotal" style="color:#c53030;">-</div>
+        </div>
+      </div>
+    </div>
+    <div class="sim-verdict" id="simVerdict"></div>
+  </div>
+
+  <!-- 데이터 테이블 -->
+  <div class="table-card">
+    <h3>📋 원/달러 실적 및 예측</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>시점</th>
+          <th>원/달러</th>
+          <th>전월 대비</th>
+          <th>$500,000 원화 비용</th>
+          <th>평가</th>
+        </tr>
+      </thead>
+      <tbody id="tableBody"></tbody>
+    </table>
+    <p class="note">* 예측값은 선형 회귀 기반 추정치입니다.</p>
+  </div>
+
+</div>
+
+<script>
+// 천단위 포맷 유틸
+function parseNum(str) {
+  return parseFloat(String(str).replace(/,/g, '')) || 0;
+}
+function fmtNum(val, decimals = 2) {
+  if (!val && val !== 0) return '';
+  const parts = (+val).toFixed(decimals).split('.');
+  parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  // 소수점이 .00이면 생략 (정수값), 아니면 표시
+  return decimals === 0 || parts[1] === '0'.repeat(decimals)
+    ? parts[0]
+    : parts.join('.');
+}
+function fmtInput(el) {
+  const raw = el.value.replace(/,/g, '');
+  // 숫자+소수점만 허용
+  if (!/^\d*\.?\d*$/.test(raw)) { el.value = el.value.slice(0, -1); return; }
+  const pos = el.selectionStart;
+  const prevCommas = (el.value.slice(0, pos).match(/,/g) || []).length;
+  // 정수부만 콤마, 소수점 뒤는 그대로
+  const [intPart, decPart] = raw.split('.');
+  const formatted = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ',') + (decPart !== undefined ? '.' + decPart : '');
+  el.value = formatted;
+  // 커서 위치 보정
+  const newCommas = (formatted.slice(0, pos).match(/,/g) || []).length;
+  el.setSelectionRange(pos + newCommas - prevCommas, pos + newCommas - prevCommas);
+}
+
+let currentRate = 1531.35;
+let chart = null;
+
+// 날짜 유틸
+function lastDayOf(year, month) {
+  return new Date(year, month, 0).getDate();
+}
+const MONTH_NAMES = ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'];
+
+// 선형 회귀
+function linReg(data) {
+  const n = data.length;
+  const sumX = (n*(n-1))/2;
+  const sumY = data.reduce((a,b)=>a+b,0);
+  const sumXY = data.reduce((s,v,i)=>s+i*v,0);
+  const sumX2 = data.reduce((s,_,i)=>s+i*i,0);
+  const slope = (n*sumXY - sumX*sumY)/(n*sumX2 - sumX*sumX);
+  const intercept = (sumY - slope*sumX)/n;
+  return {slope, intercept};
+}
+function predict(reg, from, steps) {
+  return Array.from({length:steps},(_,i)=>+(reg.intercept+reg.slope*(from+i)).toFixed(2));
+}
+
+// 차트/테이블 그리기
+function renderChart(labels, rates, todayIdx) {
+  const predLabels = ['7월', '8월', '9월', '12월(연말)'];
+  const cur = rates[rates.length - 1];
+  const n = predLabels.length;
+
+  // 전문가 의견 종합 단일 예측선
+  // 낙관(투자은행 평균 1,426) + 중립(횡보 1,545) + 비관(고환율 1,590) 가중 평균
+  // 가중치: 낙관 40%, 중립 35%, 비관 25% (전문가 의견 분포 반영)
+  const targets = { opt: 1426, mid: 1545, pes: 1590 };
+  const w = { opt: 0.4, mid: 0.35, pes: 0.25 };
+  const consensusTarget = targets.opt * w.opt + targets.mid * w.mid + targets.pes * w.pes;
+  const predRates = predLabels.map((_, i) =>
+    +(cur + (consensusTarget - cur) * (i + 1) / n).toFixed(2)
+  );
+
+  const allLabels = [...labels, ...predLabels];
+  const allRates  = [...rates, ...predRates];
+
+  const ctx = document.getElementById('mainChart').getContext('2d');
+  if (chart) chart.destroy();
+  Chart.register(ChartDataLabels);
+  chart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: allLabels,
+      datasets: [
+        {
+          label: '원/달러 (실적)',
+          data: [...rates, ...Array(n).fill(null)],
+          borderColor: '#3182ce',
+          backgroundColor: 'rgba(49,130,206,0.08)',
+          borderWidth: 2.5,
+          pointRadius: rates.map((_,i) => i === todayIdx ? 5 : 5),
+          pointBackgroundColor: rates.map(r =>
+            r <= 1480 ? '#38a169' : r >= 1540 ? '#e53e3e' : '#3182ce'
+          ),
+          tension: 0.3,
+          fill: true,
+          datalabels: {
+            display: true,
+            anchor: 'end',
+            align: ctx => {
+              const i = ctx.dataIndex;
+              if (i === rates.length - 1) return 'bottom';
+              const d = ctx.dataset.data;
+              const prev = i > 0 ? d[i - 1] : null;
+              const next = d[i + 1] ?? null;
+              // 다음 값이 현재보다 높으면(올라감) 레이블 아래, 아니면 위
+              if (next !== null && next > d[i]) return 'bottom';
+              if (prev !== null && prev > d[i]) return 'top';
+              return i % 2 === 0 ? 'top' : 'bottom';
+            },
+            offset: ctx => ctx.dataIndex === rates.length - 1 ? 10 : 5,
+            formatter: v => v ? Math.round(v).toLocaleString() : '',
+            font: { size: 11, weight: '600' },
+            color: '#2b6cb0',
+          }
+        },
+        {
+          label: `전문가 종합 예측 (연말 ${Math.round(consensusTarget).toLocaleString()}원)`,
+          data: [...Array(rates.length - 1).fill(null), cur, ...predRates],
+          borderColor: '#805ad5',
+          borderWidth: 2.5,
+          borderDash: [6, 4],
+          pointRadius: 4,
+          pointStyle: 'triangle',
+          tension: 0.3,
+          datalabels: {
+            display: ctx => ctx.dataset.data[ctx.dataIndex] !== null && ctx.dataIndex > rates.length - 1,
+            anchor: 'end',
+            align: 'top',
+            offset: 4,
+            formatter: v => v ? Math.round(v).toLocaleString() : '',
+            font: { size: 10, weight: '600' }, color: '#805ad5'
+          }
+        },
+        {
+          label: '현재 환율',
+          data: Array(allLabels.length).fill(currentRate),
+          borderColor: '#ed8936',
+          borderWidth: 1.5,
+          borderDash: [3, 3],
+          pointRadius: 0,
+          datalabels: { display: false }
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      layout: { padding: { right: 70 } },
+      plugins: {
+        legend: { position: 'top', labels: { font: { size: 12 } } },
+        annotation: {
+          annotations: {
+            goodZone: {
+              type: 'box',
+              yMin: 1400, yMax: 1490,
+              backgroundColor: 'rgba(56,161,105,0.07)',
+              borderColor: 'rgba(56,161,105,0.3)',
+              borderWidth: 1,
+              label: { content: '결제 적극 고려 구간', display: true, position: 'center', font: { size: 11 }, color: '#276749' }
+            },
+            divider: { display: false }
+          }
+        },
+        tooltip: {
+          callbacks: {
+            label: c => `${c.dataset.label}: ${c.parsed.y?.toLocaleString()}원`
+          }
+        }
+      },
+      scales: {
+        x: { ticks: { font: { size: 11 } } },
+        y: {
+          min: 1350,
+          ticks: { font: { size: 11 }, callback: v => v.toLocaleString() + '원' }
+        }
+      }
+    }
+  });
+
+  // 테이블
+  buildTable(allLabels, allRates, rates.length);
+}
+
+// 테이블
+function buildTable(allLabels, allRates, histLen) {
+  const tbody = document.getElementById('tableBody');
+  tbody.innerHTML = '';
+  const usd = parseNum(document.getElementById('usdAmount').value) || 500000;
+  allRates.forEach((rate, i) => {
+    const isPred = i >= histLen;
+    const prev = i > 0 ? allRates[i-1] : null;
+    const diff = prev ? (rate - prev).toFixed(2) : '-';
+    const cost = Math.round(usd * rate);
+    const tag = isPred ? '<span class="tag tag-pred">예측</span>' :
+                rate <= 1480 ? '<span class="tag tag-good">결제 적기</span>' :
+                rate >= 1540 ? '<span class="tag tag-bad">결제 불리</span>' :
+                '<span class="tag tag-mid">관망</span>';
+    const diffStr = diff === '-' ? '-' :
+      (+diff > 0 ? `<span style="color:#e53e3e">▲ ${(+diff).toFixed(2)}</span>`
+                 : `<span style="color:#38a169">▼ ${Math.abs(+diff).toFixed(2)}</span>`);
+    const tr = document.createElement('tr');
+    if (isPred) tr.className = 'predicted';
+    tr.innerHTML = `
+      <td>${allLabels[i]}</td>
+      <td>${rate.toLocaleString()}원</td>
+      <td>${diffStr}</td>
+      <td>${cost.toLocaleString()}원</td>
+      <td>${tag}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+// 계산기
+function calculate() {
+  const usd = parseNum(document.getElementById('usdAmount').value) || 500000;
+  const cur  = parseNum(document.getElementById('usdRateInput').value) || currentRate;
+  const tgt  = parseNum(document.getElementById('targetRate').value) || 1480;
+
+  const curCost = Math.round(usd * cur);
+  const tgtCost = Math.round(usd * tgt);
+  const saving  = curCost - tgtCost;
+
+  document.getElementById('calcResult').innerHTML = `
+    <div class="result-box box-current">
+      <div class="r-label">현재 환율로 결제 시</div>
+      <div class="r-value">${curCost.toLocaleString()}원</div>
+      <div class="r-sub">${cur.toLocaleString()}원/달러</div>
+    </div>
+    <div class="result-box box-good">
+      <div class="r-label">목표 환율로 결제 시</div>
+      <div class="r-value">${tgtCost.toLocaleString()}원</div>
+      <div class="r-sub">${tgt.toLocaleString()}원/달러</div>
+    </div>
+    <div class="result-box box-diff">
+      <div class="r-label">기다리면 절약 가능</div>
+      <div class="r-value" style="color:${saving>0?'#38a169':'#e53e3e'}">${saving>0?'+':''}${saving.toLocaleString()}원</div>
+      <div class="r-sub">${((Math.abs(saving)/curCost)*100).toFixed(1)}% 차이</div>
+    </div>
+  `;
+}
+
+// fawazahmed0 CDN API - KRW 지원, 무료, 빠름
+// latest: @latest, 과거: @YYYY-MM-DD
+async function fetchRate(dateStr) {
+  // dateStr: 'latest' or 'YYYY-MM-DD'
+  const url = `https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@${dateStr}/v1/currencies/usd.json`;
+  const res = await fetch(url);
+  const data = await res.json();
+  return { krw: +data.usd.krw.toFixed(2), cny: +data.usd.cny.toFixed(4) };
+}
+
+// 날짜 유틸
+function todayStr() {
+  const d = new Date();
+  const pad = n => String(n).padStart(2,'0');
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+}
+function fetchToday() {
+  document.getElementById('dateInput').value = todayStr();
+  fetchLiveRates(todayStr(), true);
+}
+function fetchByDate() {
+  const val = document.getElementById('dateInput').value;
+  if (!val) return;
+  fetchLiveRates(val, false);
+}
+
+// 전체 데이터 로딩
+async function fetchLiveRates(targetStr, isToday) {
+  if (targetStr === undefined) { targetStr = todayStr(); isToday = true; }
+  const statusEl = document.getElementById('liveStatus');
+  try {
+    statusEl.textContent = '환율 데이터 불러오는 중...';
+    statusEl.style.color = '#718096';
+
+    const pad = n => String(n).padStart(2, '0');
+    const [year, month, day] = targetStr.split('-').map(Number);
+
+    const fetches = [];
+    const meta    = [];
+
+    // 1월 ~ 지난달: 각 월 15일 대표값
+    for (let m = 1; m < month; m++) {
+      fetches.push(fetchRate(`${year}-${pad(m)}-15`));
+      meta.push({ type: 'past', month: m });
+    }
+    // 이번 달 1일~전날 평균 (2일 이상일 때)
+    if (day >= 2) {
+      const dayFetches = [];
+      for (let d = 1; d < day; d++) {
+        dayFetches.push(fetchRate(`${year}-${pad(month)}-${pad(d)}`));
+      }
+      fetches.push(
+        Promise.all(dayFetches).then(res => {
+          const vals = res.map(r => r.krw).filter(v => v > 0);
+          const avg = +(vals.reduce((a,b)=>a+b,0) / vals.length).toFixed(2);
+          return { krw: avg, cny: null };
+        })
+      );
+      meta.push({ type: 'curAvg' });
+    }
+    // 기준일 환율: 오늘이면 open.er-api, 과거면 fawazahmed0
+    if (isToday) {
+      fetches.push(
+        fetch('https://open.er-api.com/v6/latest/USD')
+          .then(r => r.json())
+          .then(d => ({
+            krw: +d.rates.KRW.toFixed(2),
+            cny: +d.rates.CNY.toFixed(4),
+            cnyKrw: +(d.rates.KRW / d.rates.CNY).toFixed(2)
+          }))
+      );
+    } else {
+      fetches.push(
+        fetchRate(targetStr).then(r => ({ ...r, cnyKrw: +(r.krw / r.cny).toFixed(2) }))
+      );
+    }
+    meta.push({ type: 'target' });
+
+    const results = await Promise.all(fetches);
+
+    const labels = [];
+    const rates  = [];
+    let todayIdx = 0;
+    let cnyRate  = 6.77;
+
+    results.forEach((r, i) => {
+      const m = meta[i];
+      if (m.type === 'past') {
+        labels.push(MONTH_NAMES[m.month - 1]);
+        rates.push(r.krw);
+      } else if (m.type === 'curAvg') {
+        labels.push(`${month}월 1~${day-1}일`);
+        rates.push(r.krw);
+      } else {
+        todayIdx = rates.length;
+        currentRate = r.krw;
+        cnyRate = r.cny || 6.77;
+        labels.push(`${month}월 ${day}일`);
+        rates.push(r.krw);
+      }
+    });
+
+    // 보고서 날짜
+    const isActualToday = targetStr === todayStr();
+    document.getElementById('reportDate').textContent =
+      `${year}년 ${month}월 ${day}일 기준` + (isActualToday ? '' : ' (과거 조회)');
+
+    // 카드
+    const yearMin = Math.min(...rates);
+    const yearMax = Math.max(...rates);
+    document.getElementById('cardCurrent').textContent = currentRate.toLocaleString() + '원';
+    document.getElementById('cardCurrentSub').textContent = `올해 최저 대비 +${(currentRate - yearMin).toFixed(2)}원`;
+    document.querySelector('.top-cards .card:nth-child(2) .value').textContent = yearMin.toLocaleString() + '원';
+    document.querySelector('.top-cards .card:nth-child(2) .sub').textContent = labels[rates.indexOf(yearMin)] + ' — 최적 결제 시점';
+    document.querySelector('.top-cards .card:nth-child(3) .value').textContent = yearMax.toLocaleString() + '원';
+    document.querySelector('.top-cards .card:nth-child(3) .sub').textContent = labels[rates.indexOf(yearMax)] + ' — 최악 결제 시점';
+
+    // 신호
+    const signalCard  = document.getElementById('signalCard');
+    const signalIcon  = document.getElementById('signalIcon');
+    const signalTitle = document.getElementById('signalTitle');
+    const signalDesc  = document.getElementById('signalDesc');
+    if (currentRate <= 1480) {
+      signalCard.style.borderLeft = '6px solid #38a169';
+      signalIcon.textContent = '✅';
+      signalTitle.textContent = '결제 적기 — 지금 결제 고려';
+      signalTitle.style.color = '#276749';
+      signalDesc.textContent = `${currentRate.toLocaleString()}원으로 낮은 수준. 결제 적극 검토 구간.`;
+    } else if (currentRate >= 1540) {
+      signalCard.style.borderLeft = '6px solid #e53e3e';
+      signalIcon.textContent = '🔴';
+      signalTitle.textContent = '결제 불리 — 대기 권장';
+      signalTitle.style.color = '#c53030';
+      signalDesc.textContent = `${currentRate.toLocaleString()}원으로 높은 수준. 환율 하락 시까지 대기 권장.`;
+    } else {
+      signalCard.style.borderLeft = '6px solid #ed8936';
+      signalIcon.textContent = '🟡';
+      signalTitle.textContent = '관망 구간 — 추이 모니터링';
+      signalTitle.style.color = '#c05621';
+      signalDesc.textContent = `${currentRate.toLocaleString()}원으로 중간 수준. 1,480원 이하 진입 시 결제 고려.`;
+    }
+
+    // 계산기/시뮬레이터
+    document.getElementById('usdRateInput').value = fmtNum(currentRate);
+    calculate();
+    const lastResult = results[results.length - 1];
+    const cnyKrw = lastResult.cnyKrw || +(currentRate / cnyRate).toFixed(2);
+    document.getElementById('simUsdRate').value = fmtNum(currentRate);
+    document.getElementById('simCnyRate').value = fmtNum(cnyKrw);
+    simCalc();
+
+    renderChart(labels, rates, todayIdx);
+
+    statusEl.textContent = isActualToday ? '✅ 실시간 환율 적용됨' : `📅 ${month}월 ${day}일 데이터 표시 중`;
+    statusEl.style.color = isActualToday ? '#38a169' : '#805ad5';
+    document.getElementById('liveTime').textContent = '업데이트: ' + new Date().toLocaleString('ko-KR');
+  } catch(e) {
+    console.error(e);
+    statusEl.textContent = '⚠️ API 오류 — 잠시 후 다시 시도해주세요';
+    statusEl.style.color = '#e53e3e';
+  }
+}
+
+// 시뮬레이터
+function simCalc() {
+  const usdAmt  = parseNum(document.getElementById('simUsdAmount').value);
+  const usdRate = parseNum(document.getElementById('simUsdRate').value);
+  const cnyAmt  = parseNum(document.getElementById('simCnyAmount').value);
+  const cnyRate = parseNum(document.getElementById('simCnyRate').value);
+
+  const usdTotal = Math.round(usdAmt * usdRate);
+  const cnyTotal = Math.round(cnyAmt * cnyRate);
+
+  document.getElementById('simUsdTotal').textContent = usdTotal ? usdTotal.toLocaleString() + '원' : '-';
+  document.getElementById('simCnyTotal').textContent = cnyTotal ? cnyTotal.toLocaleString() + '원' : '-';
+
+  if (!usdTotal || !cnyTotal) {
+    document.getElementById('simVerdict').innerHTML = '';
+    return;
+  }
+
+  const diff = Math.abs(usdTotal - cnyTotal);
+  const pct  = ((diff / Math.max(usdTotal, cnyTotal)) * 100).toFixed(1);
+  const usdWin = usdTotal < cnyTotal;
+  const impliedRate = (usdAmt > 0 && cnyAmt > 0) ? (cnyAmt / usdAmt).toFixed(2) : null;
+
+  const verdict = document.getElementById('simVerdict');
+  verdict.style.background = usdWin ? '#ebf8ff' : '#fff5f5';
+  verdict.style.border = usdWin ? '1px solid #bee3f8' : '1px solid #fed7d7';
+  verdict.innerHTML = `
+    <strong style="font-size:16px; color:${usdWin ? '#2b6cb0' : '#c53030'}">
+      ${usdWin ? '💵 달러 결제가 유리' : '🀄 위안 결제가 유리'}
+    </strong>
+    &nbsp;&nbsp;차이: <strong>${diff.toLocaleString()}원 (${pct}%)</strong>
+    ${impliedRate ? `<br><span style="font-size:12px; color:#718096; margin-top:4px; display:block;">
+      업체 내부 환산율: ${impliedRate} 위안/달러 &nbsp;|&nbsp; 시장 환율: ${(usdRate / cnyRate).toFixed(2)} 위안/달러
+      &nbsp;→&nbsp; ${parseFloat(impliedRate) > (usdRate/cnyRate) ? '시장보다 위안 많이 요구 → 달러 유리' : '시장보다 위안 적게 요구 → 위안 유리'}
+    </span>` : ''}
+  `;
+}
+
+calculate();
+simCalc();
+
+window.addEventListener('DOMContentLoaded', () => {
+  const t = todayStr();
+  document.getElementById('dateInput').value = t;
+  fetchLiveRates(t, true);
+});
+</script>
+</body>
+</html>
