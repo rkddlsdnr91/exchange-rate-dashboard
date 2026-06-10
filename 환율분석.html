@@ -711,8 +711,20 @@ async function fetchLiveRates(targetStr, isToday) {
       );
       meta.push({ type: 'curAvg' });
     }
-    // 기준일 환율: 폴백 포함 (오늘 데이터 없으면 최근 유효일 자동 선택)
-    fetches.push(fetchRateWithFallback(targetStr));
+    // 기준일 환율: 오늘이면 exchangerate-api(당일 갱신), 과거면 fawazahmed0 폴백
+    if (isToday) {
+      fetches.push(
+        fetch('https://api.exchangerate-api.com/v4/latest/USD')
+          .then(r => r.json())
+          .then(d => ({
+            krw: +d.rates.KRW.toFixed(2),
+            cny: +d.rates.CNY.toFixed(4),
+            cnyKrw: +(d.rates.KRW / d.rates.CNY).toFixed(2)
+          }))
+      );
+    } else {
+      fetches.push(fetchRateWithFallback(targetStr));
+    }
     meta.push({ type: 'target' });
 
     const results = await Promise.all(fetches);
