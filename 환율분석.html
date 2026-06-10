@@ -637,13 +637,28 @@ function calculate() {
 }
 
 // fawazahmed0 CDN API - KRW 지원, 무료, 빠름
-// latest: @latest, 과거: @YYYY-MM-DD
 async function fetchRate(dateStr) {
-  // dateStr: 'latest' or 'YYYY-MM-DD'
   const url = `https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@${dateStr}/v1/currencies/usd.json`;
   const res = await fetch(url);
   const data = await res.json();
+  if (!data.usd || !data.usd.krw) throw new Error('no data for ' + dateStr);
   return { krw: +data.usd.krw.toFixed(2), cny: +data.usd.cny.toFixed(4) };
+}
+
+// 오늘 or 최근 유효일 자동 탐색 (오늘 데이터 없으면 최대 3일 전까지 폴백)
+async function fetchRateWithFallback(targetStr) {
+  const pad = n => String(n).padStart(2,'0');
+  const base = new Date(targetStr);
+  for (let i = 0; i <= 3; i++) {
+    const d = new Date(base);
+    d.setDate(d.getDate() - i);
+    const ds = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+    try {
+      const r = await fetchRate(ds);
+      return { ...r, cnyKrw: +(r.krw / r.cny).toFixed(2) };
+    } catch(e) { /* 다음 날짜 시도 */ }
+  }
+  throw new Error('최근 환율 데이터 없음');
 }
 
 // 날짜 유틸
@@ -696,11 +711,8 @@ async function fetchLiveRates(targetStr, isToday) {
       );
       meta.push({ type: 'curAvg' });
     }
-    // 기준일 환율: 오늘이면 @latest, 과거면 날짜 지정 — 둘 다 fawazahmed0
-    const apiDate = isToday ? 'latest' : targetStr;
-    fetches.push(
-      fetchRate(apiDate).then(r => ({ ...r, cnyKrw: +(r.krw / r.cny).toFixed(2) }))
-    );
+    // 기준일 환율: 폴백 포함 (오늘 데이터 없으면 최근 유효일 자동 선택)
+    fetches.push(fetchRateWithFallback(targetStr));
     meta.push({ type: 'target' });
 
     const results = await Promise.all(fetches);
