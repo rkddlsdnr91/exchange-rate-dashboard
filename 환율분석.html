@@ -696,22 +696,11 @@ async function fetchLiveRates(targetStr, isToday) {
       );
       meta.push({ type: 'curAvg' });
     }
-    // 기준일 환율: 오늘이면 open.er-api, 과거면 fawazahmed0
-    if (isToday) {
-      fetches.push(
-        fetch('https://open.er-api.com/v6/latest/USD')
-          .then(r => r.json())
-          .then(d => ({
-            krw: +d.rates.KRW.toFixed(2),
-            cny: +d.rates.CNY.toFixed(4),
-            cnyKrw: +(d.rates.KRW / d.rates.CNY).toFixed(2)
-          }))
-      );
-    } else {
-      fetches.push(
-        fetchRate(targetStr).then(r => ({ ...r, cnyKrw: +(r.krw / r.cny).toFixed(2) }))
-      );
-    }
+    // 기준일 환율: 오늘이면 @latest, 과거면 날짜 지정 — 둘 다 fawazahmed0
+    const apiDate = isToday ? 'latest' : targetStr;
+    fetches.push(
+      fetchRate(apiDate).then(r => ({ ...r, cnyKrw: +(r.krw / r.cny).toFixed(2) }))
+    );
     meta.push({ type: 'target' });
 
     const results = await Promise.all(fetches);
